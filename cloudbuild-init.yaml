@@ -1,0 +1,74 @@
+substitutions:
+    _APPLY_CHANGES: 'false'
+    _ENV: 'undefined'
+    _INIT: 'false'
+steps:
+- id: 'context'
+  name: 'alpine'
+  entrypoint: 'sh'
+  args:
+  - '-c'
+  - |
+      echo "***********************"
+      echo "project : $PROJECT_ID"
+      echo "branch  : $BRANCH_NAME"
+      echo "env     : ${_ENV}"
+      echo "mode    : $([[ ${_APPLY_CHANGES} = 'true' ]] && echo 'LIVE' || echo 'DRY RUN')"
+      echo "***********************"
+- id: 'Init Backend Bucket'
+  name: gcr.io/cloud-builders/gcloud
+  entrypoint: sh
+  args:
+  - '-c'
+  - |
+      if [ "${_INIT}" = 'true' ]; then
+        echo "***********************"
+        echo "init terraform Buckets"
+        echo "env     : ${_ENV}"
+        echo "***********************"
+        cd environments/init
+        chmod +x init.sh
+        ./init.sh $PROJECT_ID
+      else
+        echo "*****************************************"
+        echo "Skipping init buckets"
+        echo "*****************************************"
+      fi
+
+- id: 'terraform init'
+  name: 'hashicorp/terraform:latest'
+  entrypoint: 'sh'
+  args:
+  - '-c'
+  - |
+      cd iac/deploy-steps/1.infra/
+      TF_IN_AUTOMATION=1 terraform init -backend-config=../vars/backend/${_ENV}.tfvars -input=false -no-color -upgrade
+- id: 'terraform plan'
+  name: 'hashicorp/terraform:latest'
+  entrypoint: 'sh'
+  args:
+  - '-c'
+  - |
+      cd iac/deploy-steps/1.infra/
+      TF_IN_AUTOMATION=1 terraform plan -var-file=../vars/tfvars/${_ENV}.tfvars -no-color -input=false -out changes.tfplan
+- id: 'terraform apply'
+  name: 'hashicorp/terraform:latest'
+  entrypoint: 'sh'
+  args:
+  - '-c'
+  - |
+      if [ "${_APPLY_CHANGES}" = 'true' ]; then
+        echo "*****************************************"
+        echo "Applying changes on live environment"
+        echo "*****************************************"
+        cd iac/deploy-steps/1.infra/
+        TF_IN_AUTOMATION=1 terraform apply -input=false -auto-approve changes.tfplan
+      else
+        echo "*****************************************"
+        echo "Skipping apply (DRY RUN)"
+        echo "*****************************************"
+      fi
+options:
+  substitution_option: 'ALLOW_LOOSE'
+  dynamic_substitutions: true
+  logging: CLOUD_LOGGING_ONLY
