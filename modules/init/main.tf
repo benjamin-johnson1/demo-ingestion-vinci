@@ -2,6 +2,7 @@ variable "project_id" { type = string }
 variable "usecase" { type = string }
 variable "repo_name" { type = string }
 variable "orga_name" { type = string }
+variable "env" { type = string }
 
 terraform {
   required_version = ">= 1.3.4, < 2.0.0"
