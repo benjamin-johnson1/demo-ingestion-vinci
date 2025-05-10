@@ -85,7 +85,6 @@ resource "google_cloudbuild_trigger" "tf-apply" {
   substitutions = {
     _APPLY_CHANGES = "true"
     _ENV           = var.env
-    _INIT          = "true"
   }
   name            = "${var.usecase}-apply"
   filename        = "cloudbuild-init.yaml"
