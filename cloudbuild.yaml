@@ -14,39 +14,6 @@ args:
     echo "env     : ${_ENV}"
     echo "mode    : $([[ ${_APPLY_CHANGES} = 'true' ]] && echo 'LIVE' || echo 'DRY RUN')"
     echo "***********************"
-
-- id: 'pre-commit check'
-name: 'alpine'
-entrypoint: 'sh'
-args:
-- '-c'
-- |
-    if [ "${_ENV}" = 'dv' ]; then
-      apk add --no-cache python3 py3-pip \
-      && apk add build-base \
-      && apk add python3-dev \
-      && apk add bash \
-      && apk --no-cache add unzip \
-      && apk --no-cache add curl \
-      && apk --no-cache add git \
-      && apk add terraform --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
-      && VIRTUAL_ENV=/opt/venv \
-      && python3 -m venv $$VIRTUAL_ENV \
-      && PATH="$$VIRTUAL_ENV/bin:$$PATH" \
-      && curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash \
-      && wget -q -O tfsec https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-linux-amd64 \
-      && chmod +x ./tfsec \
-      && mv ./tfsec /usr/local/bin/tfsec \
-      && pip install pre-commit --upgrade \
-      && pre-commit --version \
-      && git init . \
-      && pre-commit install \
-      && pre-commit run --all-files
-    else
-      echo "*****************************************"
-      echo "Skipping PRE-COMMIT CHECK (DRY RUN)"
-      echo "*****************************************"
-    fi
 - id: 'terraform init'
 name: 'hashicorp/terraform:latest'
 entrypoint: 'sh'
