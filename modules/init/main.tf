@@ -2,6 +2,7 @@ variable "project_id" { type = string }
 variable "usecase" { type = string }
 variable "repo_name" { type = string }
 variable "orga_name" { type = string }
+variable "env" { type = string }
 
 terraform {
   required_version = ">= 1.3.4, < 2.0.0"
@@ -84,6 +85,7 @@ resource "google_cloudbuild_trigger" "tf-apply" {
   substitutions = {
     _APPLY_CHANGES = "true"
     _ENV           = var.env
+    _INIT          = "true"
   }
   name            = "${var.usecase}-apply"
   filename        = "cloudbuild-init.yaml"
