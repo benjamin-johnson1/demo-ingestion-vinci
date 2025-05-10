@@ -42,7 +42,7 @@ steps:
   - '-c'
   - |
       cd environments/${_ENV}
-      TF_IN_AUTOMATION=1 terraform init -backend-config=../vars/backend/${_ENV}.tfvars -input=false -no-color -upgrade
+      TF_IN_AUTOMATION=1 terraform init -input=false
 - id: 'terraform plan'
   name: 'hashicorp/terraform:latest'
   entrypoint: 'sh'
@@ -50,7 +50,7 @@ steps:
   - '-c'
   - |
       cd environments/${_ENV}
-      TF_IN_AUTOMATION=1 terraform plan -var-file=../vars/tfvars/${_ENV}.tfvars -no-color -input=false -out changes.tfplan
+      TF_IN_AUTOMATION=1 terraform plan -input=false -out changes.tfplan
 - id: 'terraform apply'
   name: 'hashicorp/terraform:latest'
   entrypoint: 'sh'
