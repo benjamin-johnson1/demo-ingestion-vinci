@@ -21,7 +21,7 @@ locals {
   env = "demo"
   location = "EU"
   region = "europe-west1"
-  usecase = "demo_ingestion-vinci"
+  usecase = "demo-ingestion-vinci"
   repo_name = "demo-ingestion-vinci"
   orga_name = "benjamin-johnson1" 
 }
