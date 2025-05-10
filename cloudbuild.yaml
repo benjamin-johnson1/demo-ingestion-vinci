@@ -1,0 +1,85 @@
+substitutions:
+  _APPLY_CHANGES: 'false'
+  _ENV: 'undefined'
+steps:
+- id: 'context'
+name: 'alpine'
+entrypoint: 'sh'
+args:
+- '-c'
+- |
+    echo "***********************"
+    echo "project : $PROJECT_ID"
+    echo "branch  : $BRANCH_NAME"
+    echo "env     : ${_ENV}"
+    echo "mode    : $([[ ${_APPLY_CHANGES} = 'true' ]] && echo 'LIVE' || echo 'DRY RUN')"
+    echo "***********************"
+
+- id: 'pre-commit check'
+name: 'alpine'
+entrypoint: 'sh'
+args:
+- '-c'
+- |
+    if [ "${_ENV}" = 'dv' ]; then
+      apk add --no-cache python3 py3-pip \
+      && apk add build-base \
+      && apk add python3-dev \
+      && apk add bash \
+      && apk --no-cache add unzip \
+      && apk --no-cache add curl \
+      && apk --no-cache add git \
+      && apk add terraform --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
+      && VIRTUAL_ENV=/opt/venv \
+      && python3 -m venv $$VIRTUAL_ENV \
+      && PATH="$$VIRTUAL_ENV/bin:$$PATH" \
+      && curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash \
+      && wget -q -O tfsec https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-linux-amd64 \
+      && chmod +x ./tfsec \
+      && mv ./tfsec /usr/local/bin/tfsec \
+      && pip install pre-commit --upgrade \
+      && pre-commit --version \
+      && git init . \
+      && pre-commit install \
+      && pre-commit run --all-files
+    else
+      echo "*****************************************"
+      echo "Skipping PRE-COMMIT CHECK (DRY RUN)"
+      echo "*****************************************"
+    fi
+- id: 'terraform init'
+name: 'hashicorp/terraform:latest'
+entrypoint: 'sh'
+args:
+- '-c'
+- |
+    cd environments/${_ENV}
+    TF_IN_AUTOMATION=1 terraform init -input=false
+- id: 'terraform plan'
+name: 'hashicorp/terraform:latest'
+entrypoint: 'sh'
+args:
+- '-c'
+- |
+    cd environments/${_ENV}
+    TF_IN_AUTOMATION=1 terraform plan -input=false -out changes.tfplan
+- id: 'terraform apply'
+name: 'hashicorp/terraform:latest'
+entrypoint: 'sh'
+args:
+- '-c'
+- |
+    if [ "${_APPLY_CHANGES}" = 'true' ]; then
+      echo "*****************************************"
+      echo "Applying changes on live environment"
+      echo "*****************************************"
+      cd environments/${_ENV}
+      TF_IN_AUTOMATION=1 terraform apply -input=false -auto-approve changes.tfplan
+    else
+      echo "*****************************************"
+      echo "Skipping apply (DRY RUN)"
+      echo "*****************************************"
+    fi
+logsBucket: "gs://${PROJECT_ID}-gcs-cloud-build-logs/"
+options:
+logging: GCS_ONLY
