@@ -4,6 +4,7 @@ from airflow.decorators import dag, task
 from airflow.providers.google.cloud.hooks.gcs import GCSHook
 from google.cloud import storage, bigquery
 from typing import List, Dict
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
 # Get environment variables
 LANDING_BUCKET = os.environ.get('LANDING_BUCKET')
@@ -317,6 +318,15 @@ def file_processing_dag():
     file_list = list_files()
     results = process_all_files(file_list)
     summary = summarize_results(results)
+
+    trigger_transformation = TriggerDagRunOperator(
+    task_id='trigger_transformation',
+    trigger_dag_id='data_transformation_processor',
+    execution_date='{{ execution_date.add(minutes=10) }}',  # 10 minutes après l'exécution actuelle
+    reset_dag_run=True,  # Réinitialiser le DAG run s'il existe déjà
+    wait_for_completion=False  # Ne pas attendre que le DAG déclenché soit terminé
+    )
+    summary >> trigger_transformation
 
 # Create the DAG
 file_processing_dag_instance = file_processing_dag()
