@@ -50,12 +50,12 @@ resource "google_storage_bucket_object" "dag_file" {
   ]
 }
 
-#resource "google_storage_bucket_object" "airport_dag_file" {
-#  name   = "dags/airport_transformation.py"
-#  bucket = split("/", replace(data.google_composer_environment.composer_env_data.config[0].dag_gcs_prefix, "gs://", ""))[0]
-#  source = "${path.module}/dags/airport_transformation.py"
-#  
-#  depends_on = [
-#    google_composer_environment.composer_env
-#  ]
-#}
+resource "google_storage_bucket_object" "airport_dag_file" {
+  name   = "dags/airport_transformation.py"
+  bucket = split("/", replace(data.google_composer_environment.composer_env_data.config[0].dag_gcs_prefix, "gs://", ""))[0]
+  source = "${path.module}/dags/airport_transformation.py"
+  
+  depends_on = [
+    google_composer_environment.composer_env
+  ]
+}
