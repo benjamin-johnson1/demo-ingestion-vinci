@@ -1,0 +1,10 @@
+{"airport_code": "JFK", "full_name": "John F. Kennedy International Airport", "country": "United States", "city": "New York", "address": "JFK Access Road, Queens, NY 11430", "size": 2000000, "max_capacity": 70000000}
+{"airport_code": "LAX", "full_name": "Los Angeles International Airport", "country": "United States", "city": "Los Angeles", "address": "1 World Way, Los Angeles, CA 90045", "size": 1500000, "max_capacity": 88000000}
+{"airport_code": "ORD", "full_name": "O'Hare International Airport", "country": "United States", "city": "Chicago", "address": "10000 W O'Hare Ave, Chicago, IL 60666", "size": 1700000, "max_capacity": 85000000}
+{"airport_code": "ATL", "full_name": "Hartsfield-Jackson Atlanta International Airport", "country": "United States", "city": "Atlanta", "address": "6000 N Terminal Pkwy, Atlanta, GA 30320", "size": 2500000, "max_capacity": 107000000}
+{"airport_code": "DFW", "full_name": "Dallas/Fort Worth International Airport", "country": "United States", "city": "Dallas", "address": "2400 Aviation Dr, DFW Airport, TX 75261", "size": 1800000, "max_capacity": 75000000}
+{"airport_code": "DEN", "full_name": "Denver International Airport", "country": "United States", "city": "Denver", "address": "8500 Peña Blvd, Denver, CO 80249", "size": 2200000, "max_capacity": 69000000}
+{"airport_code": "SFO", "full_name": "San Francisco International Airport", "country": "United States", "city": "San Francisco", "address": "San Francisco, CA 94128", "size": 1400000, "max_capacity": 58000000}
+{"airport_code": "SEA", "full_name": "Seattle-Tacoma International Airport", "country": "United States", "city": "Seattle", "address": "17801 International Blvd, Seattle, WA 98158", "size": 1200000, "max_capacity": 50000000}
+{"airport_code": "MIA", "full_name": "Miami International Airport", "country": "United States", "city": "Miami", "address": "2100 NW 42nd Ave, Miami, FL 33142", "size": 1300000, "max_capacity": 45000000}
+{"airport_code": "BOS", "full_name": "Boston Logan International Airport", "country": "United States", "city": "Boston", "address": "1 Harborside Dr, Boston, MA 02128", "size": 1100000, "max_capacity": 42000000}
