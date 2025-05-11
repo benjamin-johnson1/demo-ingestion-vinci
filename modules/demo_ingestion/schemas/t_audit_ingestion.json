@@ -1,0 +1,27 @@
+[
+    {
+      "name": "file_name",
+      "type": "STRING"
+    },
+    {
+      "name": "status",
+      "type": "STRING"
+    },
+    {
+        "name": "error_reason",
+        "type": "STRING"
+    },
+    {
+        "name": "ingested_row_count",
+        "type": "NUMERIC"
+    },
+    {
+        "name": "ingestion_time",
+        "type": "TIMESTAMP"
+    },
+    {
+        "name": "ingestion_id",
+        "type": "STRING"
+    }
+    
+  ]

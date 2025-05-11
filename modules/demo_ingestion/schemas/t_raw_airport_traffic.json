@@ -14,6 +14,14 @@
     {
         "name": "passenger_count",
         "type": "NUMERIC"
+    },
+    {
+        "name": "ingestion_id",
+        "type": "STRING"
+    },
+    {
+        "name": "ingestion_time",
+        "type": "TIMESTAMP"
     }
     
   ]
