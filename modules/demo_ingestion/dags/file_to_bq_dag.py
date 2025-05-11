@@ -58,24 +58,24 @@ def file_processing_dag():
                 file_name = os.path.basename(file_path)
                 table_name = f"t_raw_{os.path.splitext(file_name)[0]}"
                 file_extension = file_path.split('.')[-1].lower()
-                
+
                 # Configure load job based on file type
                 if file_extension == 'csv':
-                    source_format = 'CSV'
-                    skip_leading_rows = 1
+                    job_config = bigquery.LoadJobConfig(
+                        source_format='CSV',
+                        skip_leading_rows=1,
+                        autodetect=True,
+                        write_disposition='WRITE_APPEND',
+                        create_disposition='CREATE_NEVER',
+                    )
                 else:  # json
                     source_format = 'NEWLINE_DELIMITED_JSON'
-                    skip_leading_rows = 0
-                
-                # Use BigQuery client directly
-                client = bigquery.Client()
-                job_config = bigquery.LoadJobConfig(
-                    source_format=source_format,
-                    skip_leading_rows=skip_leading_rows,
-                    autodetect=True,
-                    write_disposition='WRITE_APPEND',
-                    create_disposition='CREATE_NEVER',
-                )
+                    job_config = bigquery.LoadJobConfig(
+                        source_format=source_format,
+                        autodetect=True,
+                        write_disposition='WRITE_APPEND',
+                        create_disposition='CREATE_NEVER',
+                    )
                 
                 uri = f"gs://{LANDING_BUCKET}/{file_path}"
                 table_id = f"{client.project}.{BQ_DATASET}.{table_name}"
