@@ -102,8 +102,9 @@ def file_processing_dag():
                     ingestion_time = CURRENT_TIMESTAMP(),
                     ingestion_id = '{dag_run_id}'
                 WHERE 
-                    ingestion_time IS NULL
-                    AND ingestion_id IS NULL
+                    ingestion_id IS NULL
+                OR
+                    ingestion_id = "undefined"
                 """
                 
                 # Execute the update query
