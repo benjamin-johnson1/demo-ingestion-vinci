@@ -26,7 +26,8 @@ resource "google_composer_environment" "composer_env" {
   depends_on = [
     google_project_iam_member.composer_worker,
     google_project_iam_member.storage_admin,
-    google_project_iam_member.bigquery_admin
+    google_project_iam_member.bigquery_admin,
+    google_project_iam_member.composer_service_agent_v2_ext
   ]
 }
 resource "google_storage_bucket_object" "dag_file" {
