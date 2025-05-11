@@ -1,0 +1,27 @@
+[
+    {
+      "name": "airport_code",
+      "type": "STRING"
+    },
+    {
+      "name": "full_name",
+      "type": "STRING"
+    },
+    {
+      "name": "country",
+      "type": "STRING"
+    },
+    {
+        "name": "city",
+        "type": "STRING"
+    },
+    {
+        "name": "size",
+        "type": "NUMERIC"
+    },
+    {
+        "name": "max_capacity",
+        "type": "NUMERIC"
+    }
+    
+  ]
