@@ -1,7 +1,7 @@
 resource "google_bigquery_table" "table" {
   for_each = local.tables
   deletion_protection = false
-  dataset_id = each.value.datatset
+  dataset_id = each.value.dataset
   table_id = each.value.id
   schema = each.value.schema
   description = each.value.description
