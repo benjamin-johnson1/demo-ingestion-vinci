@@ -44,15 +44,19 @@ def file_processing_dag():
         return files_to_process
     
     @task
-    def process_all_files(file_list: List[str], **context) -> List[Dict[str, str]]:
+    def process_all_files(file_list: List[str]) -> List[Dict[str, str]]:
         """Process all files and return results."""
-        # Récupérer le run_id de l'exécution actuelle
-        run_id = context['run_id']
-        # Obtenir le timestamp actuel
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        from airflow.models import TaskInstance
+        from airflow.utils.context import Context
+        
+        # Get the DAG run ID from the context
+        ti = TaskInstance(task=None, execution_date=None)
+        context = Context(ti=ti)
+        dag_run_id = context["dag_run"].run_id
         
         results = []
         for file_path in file_list:
+            # Process each file and collect results
             try:
                 # Extract file information
                 file_name = os.path.basename(file_path)
@@ -63,97 +67,45 @@ def file_processing_dag():
                 if file_extension == 'csv':
                     source_format = 'CSV'
                     skip_leading_rows = 1
-                    
-                    # Pour les fichiers CSV, nous devons créer une table temporaire puis ajouter nos champs
-                    # car nous ne pouvons pas directement modifier les données pendant le chargement
-                    
-                    # Étape 1: Charger dans une table temporaire
-                    temp_table_name = f"temp_{table_name}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                    temp_table_id = f"{bigquery.Client().project}.{BQ_DATASET}.{temp_table_name}"
-                    
-                    client = bigquery.Client()
-                    job_config = bigquery.LoadJobConfig(
-                        source_format=source_format,
-                        skip_leading_rows=skip_leading_rows,
-                        autodetect=True,
-                        write_disposition='WRITE_TRUNCATE',
-                        create_disposition='CREATE_IF_NEEDED',
-                    )
-                    
-                    uri = f"gs://{LANDING_BUCKET}/{file_path}"
-                    
-                    # Charger dans la table temporaire
-                    load_job = client.load_table_from_uri(
-                        uri, temp_table_id, job_config=job_config
-                    )
-                    load_job.result()
-                    
-                    # Étape 2: Insérer dans la table finale avec les champs supplémentaires
-                    insert_query = f"""
-                    INSERT INTO `{BQ_DATASET}.{table_name}`
-                    SELECT *, 
-                        TIMESTAMP('{current_time}') AS ingestion_time,
-                        '{run_id}' AS ingestion_id
-                    FROM `{temp_table_id}`
-                    """
-                    
-                    query_job = client.query(insert_query)
-                    query_job.result()
-                    
-                    # Étape 3: Supprimer la table temporaire
-                    client.delete_table(temp_table_id)
-                    
                 else:  # json
                     source_format = 'NEWLINE_DELIMITED_JSON'
                     skip_leading_rows = 0
-                    
-                    # Pour les fichiers JSON, nous pouvons transformer les données avant le chargement
-                    # en lisant le fichier, en ajoutant nos champs et en écrivant dans un fichier temporaire
-                    
-                    # Télécharger le fichier JSON
-                    storage_client = storage.Client()
-                    bucket = storage_client.bucket(LANDING_BUCKET)
-                    blob = bucket.blob(file_path)
-                    json_content = blob.download_as_text()
-                    
-                    # Transformer les données JSON
-                    import json
-                    from tempfile import NamedTemporaryFile
-                    
-                    # Charger le JSON (supposant qu'il s'agit d'un NDJSON - une ligne JSON par ligne)
-                    transformed_lines = []
-                    for line in json_content.splitlines():
-                        if line.strip():  # Ignorer les lignes vides
-                            json_obj = json.loads(line)
-                            # Ajouter nos champs
-                            json_obj['ingestion_time'] = current_time
-                            json_obj['ingestion_id'] = run_id
-                            transformed_lines.append(json.dumps(json_obj))
-                    
-                    # Écrire dans un fichier temporaire
-                    with NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
-                        for line in transformed_lines:
-                            temp_file.write(line + '\n')
-                        temp_file_path = temp_file.name
-                    
-                    # Charger le fichier temporaire dans BigQuery
-                    client = bigquery.Client()
-                    job_config = bigquery.LoadJobConfig(
-                        source_format=source_format,
-                        autodetect=True,
-                        write_disposition='WRITE_APPEND',
-                        create_disposition='CREATE_NEVER',
-                    )
-                    
-                    with open(temp_file_path, "rb") as source_file:
-                        table_id = f"{client.project}.{BQ_DATASET}.{table_name}"
-                        load_job = client.load_table_from_file(
-                            source_file, table_id, job_config=job_config
-                        )
-                        load_job.result()
-                    
-                    # Supprimer le fichier temporaire
-                    os.remove(temp_file_path)
+                
+                # Use BigQuery client directly
+                client = bigquery.Client()
+                job_config = bigquery.LoadJobConfig(
+                    source_format=source_format,
+                    skip_leading_rows=skip_leading_rows,
+                    autodetect=True,
+                    write_disposition='WRITE_APPEND',
+                    create_disposition='CREATE_NEVER',
+                )
+                
+                uri = f"gs://{LANDING_BUCKET}/{file_path}"
+                table_id = f"{client.project}.{BQ_DATASET}.{table_name}"
+                
+                # Load data to BigQuery
+                load_job = client.load_table_from_uri(
+                    uri, table_id, job_config=job_config
+                )
+                
+                # Wait for the job to complete
+                load_job.result()
+                
+                # Update the ingestion_time and ingestion_id for newly added records
+                update_query = f"""
+                UPDATE `{table_id}`
+                SET 
+                    ingestion_time = CURRENT_TIMESTAMP(),
+                    ingestion_id = '{dag_run_id}'
+                WHERE 
+                    ingestion_time IS NULL
+                    AND ingestion_id IS NULL
+                """
+                
+                # Execute the update query
+                update_job = client.query(update_query)
+                update_job.result()  # Wait for the update to complete
                 
                 # Move file to archive bucket
                 gcs_hook = GCSHook()
@@ -170,7 +122,12 @@ def file_processing_dag():
                     object_name=file_path
                 )
                 
-                results.append({"status": "success", "file": file_path, "message": f"File {file_path} processed successfully"})
+                results.append({
+                    "status": "success", 
+                    "file": file_path, 
+                    "message": f"File {file_path} processed successfully",
+                    "dag_run_id": dag_run_id
+                })
                 
             except Exception as e:
                 # On error, move file to error bucket
@@ -189,10 +146,20 @@ def file_processing_dag():
                         object_name=file_path
                     )
                 except Exception as move_error:
-                    results.append({"status": "error", "file": file_path, "message": f"Error processing file and moving to error bucket: {str(e)}, Move error: {str(move_error)}"})
+                    results.append({
+                        "status": "error", 
+                        "file": file_path, 
+                        "message": f"Error processing file and moving to error bucket: {str(e)}, Move error: {str(move_error)}",
+                        "dag_run_id": dag_run_id
+                    })
                     continue
                 
-                results.append({"status": "error", "file": file_path, "message": f"Error processing file: {str(e)}"})
+                results.append({
+                    "status": "error", 
+                    "file": file_path, 
+                    "message": f"Error processing file: {str(e)}",
+                    "dag_run_id": dag_run_id
+                })
         
         return results
     
@@ -202,13 +169,17 @@ def file_processing_dag():
         success_count = sum(1 for r in results if r["status"] == "success")
         error_count = sum(1 for r in results if r["status"] == "error")
         
+        # Get the DAG run ID from the first result (they all have the same run ID)
+        dag_run_id = results[0]["dag_run_id"] if results else "unknown"
+        
         return {
             "total_files": len(results),
             "success_count": success_count,
-            "error_count": error_count
+            "error_count": error_count,
+            "dag_run_id": dag_run_id
         }
     
-    # Define the workflow - this is the correct way to use TaskFlow API
+    # Define the workflow
     file_list = list_files()
     results = process_all_files(file_list)
     summary = summarize_results(results)
