@@ -48,6 +48,15 @@ locals {
             clustering = ["airport_code", "flight_type"]
             dataset = "d_vinci_raw_eu_demo"
         }
+
+        t_audit_ingestion = {
+            id = "t_audit_ingestion"
+            description = "audit logs ingestion"
+            schema = file("${path.module}/schemas/t_audit_ingestion.json")
+            time_partitioning = {}
+            clustering = []
+            dataset = "d_vinci_audit_eu_demo"
+        }
     }
 
 }

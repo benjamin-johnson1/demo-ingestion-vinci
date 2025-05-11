@@ -44,88 +44,15 @@ def file_processing_dag():
         return files_to_process
     
     @task
-    def process_single_file(file_path: str) -> Dict[str, str]:
-        """Process a single file with error handling."""
-        try:
-            # Extract file information
-            file_name = os.path.basename(file_path)
-            table_name = f"t_raw_{os.path.splitext(file_name)[0]}"
-            file_extension = file_path.split('.')[-1].lower()
-            
-            # Configure load job based on file type
-            if file_extension == 'csv':
-                source_format = 'CSV'
-                skip_leading_rows = 1
-            else:  # json
-                source_format = 'NEWLINE_DELIMITED_JSON'
-                skip_leading_rows = 0
-            
-            # Use BigQuery client directly instead of operator
-            client = bigquery.Client()
-            job_config = bigquery.LoadJobConfig(
-                source_format=source_format,
-                skip_leading_rows=skip_leading_rows if source_format == 'CSV' else 0,
-                autodetect=True,
-                write_disposition='WRITE_TRUNCATE',
-                create_disposition='CREATE_NEVER',
-            )
-            
-            uri = f"gs://{LANDING_BUCKET}/{file_path}"
-            table_id = f"{client.project}.{BQ_DATASET}.{table_name}"
-            
-            # Load data to BigQuery
-            load_job = client.load_table_from_uri(
-                uri, table_id, job_config=job_config
-            )
-            
-            # Wait for the job to complete
-            load_job.result()
-            
-            # Move file to archive bucket
-            gcs_hook = GCSHook()
-            gcs_hook.copy(
-                source_bucket=LANDING_BUCKET,
-                source_object=file_path,
-                destination_bucket=ARCHIVE_BUCKET,
-                destination_object=file_path
-            )
-            
-            # Delete file from landing bucket
-            gcs_hook.delete(
-                bucket_name=LANDING_BUCKET,
-                object_name=file_path
-            )
-            
-            return {"status": "success", "file": file_path, "message": f"File {file_path} processed successfully"}
-            
-        except Exception as e:
-            # On error, move file to error bucket
-            try:
-                gcs_hook = GCSHook()
-                gcs_hook.copy(
-                    source_bucket=LANDING_BUCKET,
-                    source_object=file_path,
-                    destination_bucket=ERROR_BUCKET,
-                    destination_object=file_path
-                )
-                
-                # Delete file from landing bucket
-                gcs_hook.delete(
-                    bucket_name=LANDING_BUCKET,
-                    object_name=file_path
-                )
-            except Exception as move_error:
-                return {"status": "error", "file": file_path, "message": f"Error processing file and moving to error bucket: {str(e)}, Move error: {str(move_error)}"}
-            
-            return {"status": "error", "file": file_path, "message": f"Error processing file: {str(e)}"}
-    
-    @task
-    def process_all_files(file_list: List[str]) -> List[Dict[str, str]]:
+    def process_all_files(file_list: List[str], **context) -> List[Dict[str, str]]:
         """Process all files and return results."""
+        # Récupérer le run_id de l'exécution actuelle
+        run_id = context['run_id']
+        # Obtenir le timestamp actuel
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         results = []
         for file_path in file_list:
-            # Process each file and collect results
-            # Note: We're not calling other @task functions here
             try:
                 # Extract file information
                 file_name = os.path.basename(file_path)
@@ -136,30 +63,97 @@ def file_processing_dag():
                 if file_extension == 'csv':
                     source_format = 'CSV'
                     skip_leading_rows = 1
+                    
+                    # Pour les fichiers CSV, nous devons créer une table temporaire puis ajouter nos champs
+                    # car nous ne pouvons pas directement modifier les données pendant le chargement
+                    
+                    # Étape 1: Charger dans une table temporaire
+                    temp_table_name = f"temp_{table_name}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                    temp_table_id = f"{bigquery.Client().project}.{BQ_DATASET}.{temp_table_name}"
+                    
+                    client = bigquery.Client()
+                    job_config = bigquery.LoadJobConfig(
+                        source_format=source_format,
+                        skip_leading_rows=skip_leading_rows,
+                        autodetect=True,
+                        write_disposition='WRITE_TRUNCATE',
+                        create_disposition='CREATE_IF_NEEDED',
+                    )
+                    
+                    uri = f"gs://{LANDING_BUCKET}/{file_path}"
+                    
+                    # Charger dans la table temporaire
+                    load_job = client.load_table_from_uri(
+                        uri, temp_table_id, job_config=job_config
+                    )
+                    load_job.result()
+                    
+                    # Étape 2: Insérer dans la table finale avec les champs supplémentaires
+                    insert_query = f"""
+                    INSERT INTO `{BQ_DATASET}.{table_name}`
+                    SELECT *, 
+                        TIMESTAMP('{current_time}') AS ingestion_time,
+                        '{run_id}' AS ingestion_id
+                    FROM `{temp_table_id}`
+                    """
+                    
+                    query_job = client.query(insert_query)
+                    query_job.result()
+                    
+                    # Étape 3: Supprimer la table temporaire
+                    client.delete_table(temp_table_id)
+                    
                 else:  # json
                     source_format = 'NEWLINE_DELIMITED_JSON'
                     skip_leading_rows = 0
-                
-                # Use BigQuery client directly
-                client = bigquery.Client()
-                job_config = bigquery.LoadJobConfig(
-                    source_format=source_format,
-                    skip_leading_rows=skip_leading_rows if source_format == 'CSV' else 0,
-                    autodetect=True,
-                    write_disposition='WRITE_TRUNCATE',
-                    create_disposition='CREATE_NEVER',
-                )
-                
-                uri = f"gs://{LANDING_BUCKET}/{file_path}"
-                table_id = f"{client.project}.{BQ_DATASET}.{table_name}"
-                
-                # Load data to BigQuery
-                load_job = client.load_table_from_uri(
-                    uri, table_id, job_config=job_config
-                )
-                
-                # Wait for the job to complete
-                load_job.result()
+                    
+                    # Pour les fichiers JSON, nous pouvons transformer les données avant le chargement
+                    # en lisant le fichier, en ajoutant nos champs et en écrivant dans un fichier temporaire
+                    
+                    # Télécharger le fichier JSON
+                    storage_client = storage.Client()
+                    bucket = storage_client.bucket(LANDING_BUCKET)
+                    blob = bucket.blob(file_path)
+                    json_content = blob.download_as_text()
+                    
+                    # Transformer les données JSON
+                    import json
+                    from tempfile import NamedTemporaryFile
+                    
+                    # Charger le JSON (supposant qu'il s'agit d'un NDJSON - une ligne JSON par ligne)
+                    transformed_lines = []
+                    for line in json_content.splitlines():
+                        if line.strip():  # Ignorer les lignes vides
+                            json_obj = json.loads(line)
+                            # Ajouter nos champs
+                            json_obj['ingestion_time'] = current_time
+                            json_obj['ingestion_id'] = run_id
+                            transformed_lines.append(json.dumps(json_obj))
+                    
+                    # Écrire dans un fichier temporaire
+                    with NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
+                        for line in transformed_lines:
+                            temp_file.write(line + '\n')
+                        temp_file_path = temp_file.name
+                    
+                    # Charger le fichier temporaire dans BigQuery
+                    client = bigquery.Client()
+                    job_config = bigquery.LoadJobConfig(
+                        source_format=source_format,
+                        autodetect=True,
+                        write_disposition='WRITE_APPEND',
+                        create_disposition='CREATE_NEVER',
+                    )
+                    
+                    with open(temp_file_path, "rb") as source_file:
+                        table_id = f"{client.project}.{BQ_DATASET}.{table_name}"
+                        load_job = client.load_table_from_file(
+                            source_file, table_id, job_config=job_config
+                        )
+                        load_job.result()
+                    
+                    # Supprimer le fichier temporaire
+                    os.remove(temp_file_path)
                 
                 # Move file to archive bucket
                 gcs_hook = GCSHook()

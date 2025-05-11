@@ -22,6 +22,14 @@
     {
         "name": "max_capacity",
         "type": "NUMERIC"
+    },
+    {
+        "name": "ingestion_id",
+        "type": "NUMERIC"
+    },
+    {
+        "name": "ingestion_time",
+        "type": "NUMERIC"
     }
     
   ]
