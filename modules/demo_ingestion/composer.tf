@@ -1,11 +1,3 @@
-locals {
-  bucket_name = replace(
-    google_composer_environment.composer_env.config[0].dag_gcs_prefix,
-    "/^gs:\\/\\/([^/]+)\\/dags$/",
-    "$1"
-  )
-}
-
 resource "google_composer_environment" "composer_env" {
   name   = "${local.project_id}-composer"
   region = local.region
@@ -39,14 +31,31 @@ resource "google_composer_environment" "composer_env" {
   ]
 }
 
+data "google_composer_environment" "composer_env_data" {
+  name   = google_composer_environment.composer_env.name
+  region = local.region
+  
+  depends_on = [
+    google_composer_environment.composer_env
+  ]
+}
+
 resource "google_storage_bucket_object" "dag_file" {
   name   = "dags/file_to_bq_dag.py"
-  bucket = local.bucket_name
+  bucket = split("/", replace(data.google_composer_environment.composer_env_data.config[0].dag_gcs_prefix, "gs://", ""))[0]
   source = "${path.module}/dags/file_to_bq_dag.py"
+  
+  depends_on = [
+    google_composer_environment.composer_env
+  ]
 }
 
 resource "google_storage_bucket_object" "airport_dag_file" {
   name   = "dags/airport_transformation.py"
-  bucket = local.bucket_name
+  bucket = split("/", replace(data.google_composer_environment.composer_env_data.config[0].dag_gcs_prefix, "gs://", ""))[0]
   source = "${path.module}/dags/airport_transformation.py"
+  
+  depends_on = [
+    google_composer_environment.composer_env
+  ]
 }
