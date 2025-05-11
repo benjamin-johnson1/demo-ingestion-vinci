@@ -1,4 +1,4 @@
- from datetime import datetime, timedelta
+from datetime import datetime, timedelta
 from airflow.decorators import dag, task
 from airflow.sensors.external_task import ExternalTaskSensor
 from google.cloud import bigquery
