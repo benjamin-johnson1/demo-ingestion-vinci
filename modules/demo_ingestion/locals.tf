@@ -4,6 +4,7 @@ locals {
     location = var.location
     project_id = var.project_id
     env= var.env
+    region = var.region
     
     buckets = {
         landing = {
