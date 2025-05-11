@@ -19,7 +19,7 @@ provider "google" {
 locals {
   project_id = "bj-demo-ingestion-vinci"
   env = "demo"
-  location = "EU"
+  location = "eu"
   region = "europe-west1"
   usecase = "vinci"
   repo_name = "demo-ingestion-vinci"
