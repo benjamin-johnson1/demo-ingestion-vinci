@@ -43,26 +43,25 @@ def file_processing_dag():
             if blob.name.endswith('.csv') or blob.name.endswith('.json'):
                 files_to_process.append(blob.name)
 
-        # Add this line to log the files found
         print(f"Files found for processing: {files_to_process}") 
         return files_to_process
     
     @task
     def process_all_files(file_list: List[str], **kwargs) -> List[Dict[str, str]]:
         """Process all files and return results."""
-        # Retrieve the DAG run ID from the Airflow context
         context = kwargs
-        dag_run_id = context.get("dag_run").run_id  # Safely get the DAG run ID
+        dag_run_id = context.get("dag_run").run_id
         
         results = []
         for file_path in file_list:
-            # Process each file and collect results
             try:
-                # Extract file information
                 file_name = os.path.basename(file_path)
                 table_name = f"t_raw_{os.path.splitext(file_name)[0]}"
                 file_extension = file_path.split('.')[-1].lower()
                 client = bigquery.Client()
+                current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                uri = f"gs://{LANDING_BUCKET}/{file_path}"
+                table_id = f"{client.project}.{BQ_RAW_DATASET}.{table_name}"
 
                 # Configure load job based on file type
                 if file_extension == 'csv':
@@ -73,52 +72,84 @@ def file_processing_dag():
                         write_disposition='WRITE_APPEND',
                         create_disposition='CREATE_NEVER',
                     )
-                elif file_extension == 'json':  
+                    
+                    # Load data to BigQuery
+                    load_job = client.load_table_from_uri(
+                        uri, table_id, job_config=job_config
+                    )
+                    
+                    # Wait for the job to complete
+                    load_job_result = load_job.result()
+                    
+                    # Get the number of rows ingested
+                    ingested_row_count = load_job_result.output_rows
+                    
+                    # Update the ingestion_time and ingestion_id for newly added records
+                    update_query = f"""
+                    UPDATE `{table_id}`
+                    SET 
+                        ingestion_time = CURRENT_TIMESTAMP(),
+                        ingestion_id = '{dag_run_id}'
+                    WHERE 
+                        ingestion_id IS NULL
+                    AND
+                        ingestion_time IS NULL
+                    """
+                    
+                    # Execute the update query
+                    update_job = client.query(update_query)
+                    update_job.result()
+                    
+                elif file_extension == 'json':
+                    # Pour JSON, utiliser schema_update_options pour ajouter les colonnes
+                    # et définir des valeurs par défaut avec des expressions SQL
+                    
+                    # Créer un schéma avec les colonnes d'ingestion
+                    schema_update = [
+                        bigquery.SchemaField("ingestion_id", "STRING"),
+                        bigquery.SchemaField("ingestion_time", "TIMESTAMP")
+                    ]
+                    
                     job_config = bigquery.LoadJobConfig(
-                        source_format= bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+                        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
                         autodetect=True,
                         write_disposition='WRITE_TRUNCATE',
-                        create_disposition='CREATE_NEVER'
+                        create_disposition='CREATE_NEVER',
+                        schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION]
                     )
-                
-                uri = f"gs://{LANDING_BUCKET}/{file_path}"
-                table_id = f"{client.project}.{BQ_RAW_DATASET}.{table_name}"
-                
-                # Load data to BigQuery
-                load_job = client.load_table_from_uri(
-                    uri, table_id, job_config=job_config
-                )
-                
-                # Wait for the job to complete
-                load_job_result = load_job.result()
-                
-                # Get the number of rows ingested
-                ingested_row_count = load_job_result.output_rows
-                
-                # Update the ingestion_time and ingestion_id for newly added records
-                update_query = f"""
-                UPDATE `{table_id}`
-                SET 
-                    ingestion_time = CURRENT_TIMESTAMP(),
-                    ingestion_id = '{dag_run_id}'
-                WHERE 
-                    ingestion_id IS NULL
-                OR
-                    ingestion_id = "undefined"
-                """
-                
-                # Execute the update query
-                update_job = client.query(update_query)
-                update_job.result()  # Wait for the update to complete
+                    
+                    # Load data to BigQuery
+                    load_job = client.load_table_from_uri(
+                        uri, table_id, job_config=job_config
+                    )
+                    
+                    # Wait for the job to complete
+                    load_job_result = load_job.result()
+                    
+                    # Get the number of rows ingested
+                    ingested_row_count = load_job_result.output_rows
+                    
+                    # Après le chargement, mettre à jour les colonnes d'ingestion
+                    update_query = f"""
+                    UPDATE `{table_id}`
+                    SET 
+                        ingestion_time = TIMESTAMP('{current_time}'),
+                        ingestion_id = '{dag_run_id}'
+                    WHERE 
+                        TRUE  -- Mettre à jour toutes les lignes
+                    """
+                    
+                    # Execute the update query
+                    update_job = client.query(update_query)
+                    update_job.result()
                 
                 # Log to audit table
-                current_time = datetime.now()
                 audit_row = {
                     "file_name": file_name,
                     "status": "SUCCESS",
                     "error_reason": None,
                     "ingested_row_count": ingested_row_count,
-                    "ingestion_time": current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    "ingestion_time": current_time,
                     "ingestion_id": dag_run_id
                 }
                 
@@ -129,7 +160,7 @@ def file_processing_dag():
                     print(f"Errors inserting into audit table: {audit_errors}")
                 
                 # Generate timestamp for the filename
-                timestamp = current_time.strftime("%Y%m%d%H%M%S")
+                timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
                 
                 # Split the file path into directory and filename
                 file_dir = os.path.dirname(file_path)
@@ -174,13 +205,13 @@ def file_processing_dag():
                 try:
                     # Log to audit table for error case
                     client = bigquery.Client()
-                    current_time = datetime.now()
+                    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     audit_row = {
                         "file_name": os.path.basename(file_path),
                         "status": "ERROR",
                         "error_reason": error_message[:1000],  # Truncate if too long
                         "ingested_row_count": 0,
-                        "ingestion_time": current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                        "ingestion_time": current_time,
                         "ingestion_id": dag_run_id
                     }
                     
@@ -191,7 +222,7 @@ def file_processing_dag():
                         print(f"Errors inserting into audit table: {audit_errors}")
                     
                     # Generate timestamp for the filename
-                    timestamp = current_time.strftime("%Y%m%d%H%M%S")
+                    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
                     
                     # Split the file path into directory and filename
                     file_dir = os.path.dirname(file_path)
@@ -234,13 +265,13 @@ def file_processing_dag():
                     # Try to log to audit table even if move failed
                     try:
                         client = bigquery.Client()
-                        current_time = datetime.now()
+                        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         audit_row = {
                             "file_name": os.path.basename(file_path),
                             "status": "ERROR",
                             "error_reason": f"Processing error: {error_message[:500]}... Move error: {str(move_error)[:500]}",
                             "ingested_row_count": 0,
-                            "ingestion_time": current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                            "ingestion_time": current_time,
                             "ingestion_id": dag_run_id
                         }
                         
