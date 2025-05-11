@@ -26,7 +26,7 @@ resource "google_composer_environment" "composer_env" {
         LANDING_BUCKET = "${local.project_id}-landing"
         ERROR_BUCKET   = "${local.project_id}-error"
         ARCHIVE_BUCKET = "${local.project_id}-archive"
-        BQ_DATASET     = "d_${local.usecase}_raw_${lower(local.location)}_${lower(local.env)}"
+        BQ_RAW_DATASET     = "d_${local.usecase}_raw_${lower(local.location)}_${lower(local.env)}"
       }
     }
   }
@@ -43,4 +43,10 @@ resource "google_storage_bucket_object" "dag_file" {
   name   = "dags/file_to_bq_dag.py"
   bucket = local.bucket_name
   source = "${path.module}/dags/file_to_bq_dag.py"
+}
+
+resource "google_storage_bucket_object" "airport_dag_file" {
+  name   = "dags/airport_transformation.py"
+  bucket = local.bucket_name
+  source = "${path.module}/dags/airport_transformation.py"
 }

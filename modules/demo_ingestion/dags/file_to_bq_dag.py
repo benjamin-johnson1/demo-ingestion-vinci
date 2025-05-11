@@ -9,13 +9,14 @@ from typing import List, Dict
 LANDING_BUCKET = os.environ.get('LANDING_BUCKET')
 ERROR_BUCKET = os.environ.get('ERROR_BUCKET')
 ARCHIVE_BUCKET = os.environ.get('ARCHIVE_BUCKET')
-BQ_DATASET = os.environ.get('BQ_DATASET')
+BQ_RAW_DATASET = os.environ.get('BQ_RAW_DATASET')
 AUDIT_TABLE = 'bj-demo-ingestion-vinci.d_vinci_audit_eu_demo.t_audit_ingestion'
 
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
-    'email_on_failure': False,
+    'email_on_failure': True,
+    'email': "benjamin99.johnson@gmail.com" #use groups within an organization
     'email_on_retry': False,
     'retries': 1,
     'retry_delay': timedelta(minutes=5),
@@ -82,7 +83,7 @@ def file_processing_dag():
                     )
                 
                 uri = f"gs://{LANDING_BUCKET}/{file_path}"
-                table_id = f"{client.project}.{BQ_DATASET}.{table_name}"
+                table_id = f"{client.project}.{BQ_RAW_DATASET}.{table_name}"
                 
                 # Load data to BigQuery
                 load_job = client.load_table_from_uri(
