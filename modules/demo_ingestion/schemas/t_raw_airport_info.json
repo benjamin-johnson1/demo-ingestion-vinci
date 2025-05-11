@@ -21,11 +21,11 @@
     },
     {
         "name": "size",
-        "type": "NUMERIC"
+        "type": "INTEGER"
     },
     {
         "name": "max_capacity",
-        "type": "NUMERIC"
+        "type": "INTEGER"
     },
     {
         "name": "ingestion_id",
