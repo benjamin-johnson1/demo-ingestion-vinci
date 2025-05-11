@@ -65,7 +65,7 @@ resource "google_cloudbuild_trigger" "tf-plan" {
   }
   name = "${var.usecase}-plan"
   #description     = "Triggered for each Pull Request targeting the 'main' or 'env/${var.env}' branch"
-  filename        = "cloudbuild.yaml"
+  filename        = "cloudbuild-init.yaml"
   service_account = google_service_account.deploy.id
 }
 
@@ -87,6 +87,6 @@ resource "google_cloudbuild_trigger" "tf-apply" {
     _ENV           = var.env
   }
   name            = "${var.usecase}-apply"
-  filename        = "cloudbuild.yaml"
+  filename        = "cloudbuild-init.yaml"
   service_account = google_service_account.deploy.id
 }
