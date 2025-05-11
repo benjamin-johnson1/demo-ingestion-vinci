@@ -43,5 +43,6 @@ module "demo_ingestion" {
   usecase = local.usecase
   env = local.env
   location  = local.location
+  region = local.region
 }
 
