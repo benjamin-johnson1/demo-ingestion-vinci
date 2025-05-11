@@ -101,20 +101,21 @@ def file_processing_dag():
                     update_job.result()
                     
                 elif file_extension == 'json':
-                    # Pour JSON, utiliser schema_update_options pour ajouter les colonnes
-                    # et définir des valeurs par défaut avec des expressions SQL
+                    # Vider la table existante
+                    try:
+                        truncate_query = f"DELETE FROM `{table_id}` WHERE TRUE"
+                        truncate_job = client.query(truncate_query)
+                        truncate_job.result()
+                        print(f"Table {table_id} truncated successfully")
+                    except Exception as e:
+                        print(f"Error truncating table or table doesn't exist: {str(e)}")
                     
-                    # Créer un schéma avec les colonnes d'ingestion
-                    schema_update = [
-                        bigquery.SchemaField("ingestion_id", "STRING"),
-                        bigquery.SchemaField("ingestion_time", "TIMESTAMP")
-                    ]
                     
                     job_config = bigquery.LoadJobConfig(
                         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
                         autodetect=True,
-                        write_disposition='WRITE_TRUNCATE',
-                        create_disposition='CREATE_NEVER',
+                        write_disposition='WRITE_APPEND',  
+                        create_disposition='CREATE_IF_NEEDED',  
                         schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION]
                     )
                     
@@ -136,7 +137,8 @@ def file_processing_dag():
                         ingestion_time = TIMESTAMP('{current_time}'),
                         ingestion_id = '{dag_run_id}'
                     WHERE 
-                        TRUE  -- Mettre à jour toutes les lignes
+                        ingestion_time IS NULL
+                        OR ingestion_id IS NULL
                     """
                     
                     # Execute the update query
@@ -209,7 +211,7 @@ def file_processing_dag():
                     audit_row = {
                         "file_name": os.path.basename(file_path),
                         "status": "ERROR",
-                        "error_reason": error_message[:1000],  # Truncate if too long
+                        "error_reason": error_message[:1000],  
                         "ingested_row_count": 0,
                         "ingestion_time": current_time,
                         "ingestion_id": dag_run_id
