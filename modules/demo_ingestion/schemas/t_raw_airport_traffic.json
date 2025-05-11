@@ -13,7 +13,7 @@
     },
     {
         "name": "passenger_count",
-        "type": "NUMERIC"
+        "type": "INTEGER"
     },
     {
         "name": "ingestion_id",
