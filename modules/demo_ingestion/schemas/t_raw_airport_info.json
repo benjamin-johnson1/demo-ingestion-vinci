@@ -25,11 +25,11 @@
     },
     {
         "name": "ingestion_id",
-        "type": "NUMERIC"
+        "type": "STRING"
     },
     {
         "name": "ingestion_time",
-        "type": "NUMERIC"
+        "type": "TIMESTAMP"
     }
     
   ]
