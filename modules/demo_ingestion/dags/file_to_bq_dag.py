@@ -44,15 +44,11 @@ def file_processing_dag():
         return files_to_process
     
     @task
-    def process_all_files(file_list: List[str]) -> List[Dict[str, str]]:
+    def process_all_files(file_list: List[str], **kwargs) -> List[Dict[str, str]]:
         """Process all files and return results."""
-        from airflow.models import TaskInstance
-        from airflow.utils.context import Context
-        
-        # Get the DAG run ID from the context
-        ti = TaskInstance(task=None, execution_date=None)
-        context = Context(ti=ti)
-        dag_run_id = context["dag_run"].run_id
+        # Retrieve the DAG run ID from the Airflow context
+        context = kwargs
+        dag_run_id = context.get("dag_run").run_id  # Safely get the DAG run ID
         
         results = []
         for file_path in file_list:
