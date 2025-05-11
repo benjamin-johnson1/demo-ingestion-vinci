@@ -19,7 +19,7 @@ provider "google" {
 locals {
   project_id = "bj-demo-ingestion-vinci"
   env = "demo"
-  location = "EU"
+  location = "eu"
   region = "europe-west1"
   usecase = "vinci"
   repo_name = "demo-ingestion-vinci"
@@ -36,13 +36,12 @@ module "init" {
   env = local.env
 }
 
-/* TODO: Uncomment this module after the project initialization
+
 module "demo_ingestion" {
-  source          = "../../modules/template"
-  env             = local.env
-  project_id      = local.project_id
-  location        = local.location
-  region          = local.region
-  deploy_sa       = module.init.deploy
+  source  = "../../modules/demo_ingestion"
+  project_id  = local.project_id
+  usecase = local.usecase
+  env = local.env
+  location  = local.location
 }
-*/
+
