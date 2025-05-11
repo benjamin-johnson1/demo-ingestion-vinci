@@ -103,13 +103,30 @@ def file_processing_dag():
                 update_job = client.query(update_query)
                 update_job.result()  # Wait for the update to complete
                 
-                # Move file to archive bucket
+                # Generate timestamp for the filename
+                timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                
+                # Split the file path into directory and filename
+                file_dir = os.path.dirname(file_path)
+                file_name = os.path.basename(file_path)
+                file_base, file_ext = os.path.splitext(file_name)
+                
+                # Create the new filename with timestamp
+                timestamped_filename = f"{file_base}_{timestamp}{file_ext}"
+                
+                # Create the full destination path
+                if file_dir:
+                    destination_path = f"{file_dir}/{timestamped_filename}"
+                else:
+                    destination_path = timestamped_filename
+                
+                # Move file to archive bucket with timestamp in the filename
                 gcs_hook = GCSHook()
                 gcs_hook.copy(
                     source_bucket=LANDING_BUCKET,
                     source_object=file_path,
                     destination_bucket=ARCHIVE_BUCKET,
-                    destination_object=file_path
+                    destination_object=destination_path
                 )
                 
                 # Delete file from landing bucket
@@ -121,19 +138,37 @@ def file_processing_dag():
                 results.append({
                     "status": "success", 
                     "file": file_path, 
-                    "message": f"File {file_path} processed successfully",
+                    "archived_as": destination_path,
+                    "message": f"File {file_path} processed successfully and archived as {destination_path}",
                     "dag_run_id": dag_run_id
                 })
                 
             except Exception as e:
-                # On error, move file to error bucket
+                # On error, move file to error bucket with timestamp
                 try:
+                    # Generate timestamp for the filename
+                    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                    
+                    # Split the file path into directory and filename
+                    file_dir = os.path.dirname(file_path)
+                    file_name = os.path.basename(file_path)
+                    file_base, file_ext = os.path.splitext(file_name)
+                    
+                    # Create the new filename with timestamp
+                    timestamped_filename = f"{file_base}_{timestamp}{file_ext}"
+                    
+                    # Create the full destination path
+                    if file_dir:
+                        destination_path = f"{file_dir}/{timestamped_filename}"
+                    else:
+                        destination_path = timestamped_filename
+                    
                     gcs_hook = GCSHook()
                     gcs_hook.copy(
                         source_bucket=LANDING_BUCKET,
                         source_object=file_path,
                         destination_bucket=ERROR_BUCKET,
-                        destination_object=file_path
+                        destination_object=destination_path
                     )
                     
                     # Delete file from landing bucket
@@ -141,6 +176,15 @@ def file_processing_dag():
                         bucket_name=LANDING_BUCKET,
                         object_name=file_path
                     )
+                    
+                    results.append({
+                        "status": "error", 
+                        "file": file_path,
+                        "error_file": destination_path,
+                        "message": f"Error processing file: {str(e)}. Moved to error bucket as {destination_path}",
+                        "dag_run_id": dag_run_id
+                    })
+                    
                 except Exception as move_error:
                     results.append({
                         "status": "error", 
@@ -148,14 +192,6 @@ def file_processing_dag():
                         "message": f"Error processing file and moving to error bucket: {str(e)}, Move error: {str(move_error)}",
                         "dag_run_id": dag_run_id
                     })
-                    continue
-                
-                results.append({
-                    "status": "error", 
-                    "file": file_path, 
-                    "message": f"Error processing file: {str(e)}",
-                    "dag_run_id": dag_run_id
-                })
         
         return results
     
