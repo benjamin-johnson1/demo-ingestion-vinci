@@ -1,11 +1,9 @@
 import os
 from datetime import datetime, timedelta
 from airflow.decorators import dag, task
-from airflow.providers.google.cloud.transfers.gcs_to_bigquery import GCSToBigQueryOperator
 from airflow.providers.google.cloud.hooks.gcs import GCSHook
-from airflow.utils.trigger_rule import TriggerRule
-from google.cloud import storage
-from typing import List
+from google.cloud import storage, bigquery
+from typing import List, Dict
 
 # Get environment variables
 LANDING_BUCKET = os.environ.get('LANDING_BUCKET')
@@ -46,94 +44,180 @@ def file_processing_dag():
         return files_to_process
     
     @task
-    def load_file_to_bq(file_path: str):
-        """Load a file to BigQuery."""
-        file_name = os.path.basename(file_path)
-        table_name = f"t_raw_{os.path.splitext(file_name)[0]}"
-        file_extension = file_path.split('.')[-1].lower()
-        
-        # Configure load job based on file type
-        if file_extension == 'csv':
-            source_format = 'CSV'
-            skip_leading_rows = 1
-        else:  # json
-            source_format = 'NEWLINE_DELIMITED_JSON'
-            skip_leading_rows = 0
-        
-        # Use GCSToBigQueryOperator directly
-        load_operator = GCSToBigQueryOperator(
-            task_id=f'load_to_bq_{file_path}',
-            bucket=LANDING_BUCKET,
-            source_objects=[file_path],
-            destination_project_dataset_table=f"{BQ_DATASET}.{table_name}",
-            source_format=source_format,
-            skip_leading_rows=skip_leading_rows,
-            write_disposition='WRITE_TRUNCATE',
-            create_disposition='CREATE_NEVER',
-            autodetect=True,
-        )
-        
-        # Execute the operator
-        load_operator.execute(context={})
-        
-        return file_path
-    
-    @task(trigger_rule=TriggerRule.ALL_SUCCESS)
-    def move_to_archive(file_path: str):
-        """Move file to archive bucket."""
-        gcs_hook = GCSHook()
-        
-        # Copy file to archive bucket
-        gcs_hook.copy(
-            source_bucket=LANDING_BUCKET,
-            source_object=file_path,
-            destination_bucket=ARCHIVE_BUCKET,
-            destination_object=file_path
-        )
-        
-        # Delete file from landing bucket
-        gcs_hook.delete(
-            bucket_name=LANDING_BUCKET,
-            object_name=file_path
-        )
-        
-        return f"File {file_path} moved to archive"
-    
-    @task(trigger_rule=TriggerRule.ALL_FAILED)
-    def move_to_error(file_path: str):
-        """Move file to error bucket."""
-        gcs_hook = GCSHook()
-        
-        # Copy file to error bucket
-        gcs_hook.copy(
-            source_bucket=LANDING_BUCKET,
-            source_object=file_path,
-            destination_bucket=ERROR_BUCKET,
-            destination_object=file_path
-        )
-        
-        # Delete file from landing bucket
-        gcs_hook.delete(
-            bucket_name=LANDING_BUCKET,
-            object_name=file_path
-        )
-        
-        return f"File {file_path} moved to error"
+    def process_single_file(file_path: str) -> Dict[str, str]:
+        """Process a single file with error handling."""
+        try:
+            # Extract file information
+            file_name = os.path.basename(file_path)
+            table_name = f"t_raw_{os.path.splitext(file_name)[0]}"
+            file_extension = file_path.split('.')[-1].lower()
+            
+            # Configure load job based on file type
+            if file_extension == 'csv':
+                source_format = 'CSV'
+                skip_leading_rows = 1
+            else:  # json
+                source_format = 'NEWLINE_DELIMITED_JSON'
+                skip_leading_rows = 0
+            
+            # Use BigQuery client directly instead of operator
+            client = bigquery.Client()
+            job_config = bigquery.LoadJobConfig(
+                source_format=source_format,
+                skip_leading_rows=skip_leading_rows if source_format == 'CSV' else 0,
+                autodetect=True,
+                write_disposition='WRITE_TRUNCATE',
+                create_disposition='CREATE_NEVER',
+            )
+            
+            uri = f"gs://{LANDING_BUCKET}/{file_path}"
+            table_id = f"{client.project}.{BQ_DATASET}.{table_name}"
+            
+            # Load data to BigQuery
+            load_job = client.load_table_from_uri(
+                uri, table_id, job_config=job_config
+            )
+            
+            # Wait for the job to complete
+            load_job.result()
+            
+            # Move file to archive bucket
+            gcs_hook = GCSHook()
+            gcs_hook.copy(
+                source_bucket=LANDING_BUCKET,
+                source_object=file_path,
+                destination_bucket=ARCHIVE_BUCKET,
+                destination_object=file_path
+            )
+            
+            # Delete file from landing bucket
+            gcs_hook.delete(
+                bucket_name=LANDING_BUCKET,
+                object_name=file_path
+            )
+            
+            return {"status": "success", "file": file_path, "message": f"File {file_path} processed successfully"}
+            
+        except Exception as e:
+            # On error, move file to error bucket
+            try:
+                gcs_hook = GCSHook()
+                gcs_hook.copy(
+                    source_bucket=LANDING_BUCKET,
+                    source_object=file_path,
+                    destination_bucket=ERROR_BUCKET,
+                    destination_object=file_path
+                )
+                
+                # Delete file from landing bucket
+                gcs_hook.delete(
+                    bucket_name=LANDING_BUCKET,
+                    object_name=file_path
+                )
+            except Exception as move_error:
+                return {"status": "error", "file": file_path, "message": f"Error processing file and moving to error bucket: {str(e)}, Move error: {str(move_error)}"}
+            
+            return {"status": "error", "file": file_path, "message": f"Error processing file: {str(e)}"}
     
     @task
-    def process_files(file_list: List[str]):
-        """Process each file in the list."""
+    def process_all_files(file_list: List[str]) -> List[Dict[str, str]]:
+        """Process all files and return results."""
+        results = []
         for file_path in file_list:
-            # Create a processing pipeline for each file
-            loaded_file = load_file_to_bq(file_path)
-            move_to_archive(loaded_file)
-            move_to_error(loaded_file)
+            # Process each file and collect results
+            # Note: We're not calling other @task functions here
+            try:
+                # Extract file information
+                file_name = os.path.basename(file_path)
+                table_name = f"t_raw_{os.path.splitext(file_name)[0]}"
+                file_extension = file_path.split('.')[-1].lower()
+                
+                # Configure load job based on file type
+                if file_extension == 'csv':
+                    source_format = 'CSV'
+                    skip_leading_rows = 1
+                else:  # json
+                    source_format = 'NEWLINE_DELIMITED_JSON'
+                    skip_leading_rows = 0
+                
+                # Use BigQuery client directly
+                client = bigquery.Client()
+                job_config = bigquery.LoadJobConfig(
+                    source_format=source_format,
+                    skip_leading_rows=skip_leading_rows if source_format == 'CSV' else 0,
+                    autodetect=True,
+                    write_disposition='WRITE_TRUNCATE',
+                    create_disposition='CREATE_NEVER',
+                )
+                
+                uri = f"gs://{LANDING_BUCKET}/{file_path}"
+                table_id = f"{client.project}.{BQ_DATASET}.{table_name}"
+                
+                # Load data to BigQuery
+                load_job = client.load_table_from_uri(
+                    uri, table_id, job_config=job_config
+                )
+                
+                # Wait for the job to complete
+                load_job.result()
+                
+                # Move file to archive bucket
+                gcs_hook = GCSHook()
+                gcs_hook.copy(
+                    source_bucket=LANDING_BUCKET,
+                    source_object=file_path,
+                    destination_bucket=ARCHIVE_BUCKET,
+                    destination_object=file_path
+                )
+                
+                # Delete file from landing bucket
+                gcs_hook.delete(
+                    bucket_name=LANDING_BUCKET,
+                    object_name=file_path
+                )
+                
+                results.append({"status": "success", "file": file_path, "message": f"File {file_path} processed successfully"})
+                
+            except Exception as e:
+                # On error, move file to error bucket
+                try:
+                    gcs_hook = GCSHook()
+                    gcs_hook.copy(
+                        source_bucket=LANDING_BUCKET,
+                        source_object=file_path,
+                        destination_bucket=ERROR_BUCKET,
+                        destination_object=file_path
+                    )
+                    
+                    # Delete file from landing bucket
+                    gcs_hook.delete(
+                        bucket_name=LANDING_BUCKET,
+                        object_name=file_path
+                    )
+                except Exception as move_error:
+                    results.append({"status": "error", "file": file_path, "message": f"Error processing file and moving to error bucket: {str(e)}, Move error: {str(move_error)}"})
+                    continue
+                
+                results.append({"status": "error", "file": file_path, "message": f"Error processing file: {str(e)}"})
         
-        return "All files processed"
+        return results
     
-    # Define the workflow
+    @task
+    def summarize_results(results: List[Dict[str, str]]) -> Dict[str, int]:
+        """Summarize processing results."""
+        success_count = sum(1 for r in results if r["status"] == "success")
+        error_count = sum(1 for r in results if r["status"] == "error")
+        
+        return {
+            "total_files": len(results),
+            "success_count": success_count,
+            "error_count": error_count
+        }
+    
+    # Define the workflow - this is the correct way to use TaskFlow API
     file_list = list_files()
-    process_files(file_list)
+    results = process_all_files(file_list)
+    summary = summarize_results(results)
 
 # Create the DAG
 file_processing_dag_instance = file_processing_dag()
