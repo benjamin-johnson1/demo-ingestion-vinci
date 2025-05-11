@@ -78,7 +78,7 @@ def file_processing_dag():
                     job_config = bigquery.LoadJobConfig(
                         source_format=source_format,
                         autodetect=True,
-                        write_disposition='WRITE_APPEND',
+                        write_disposition='WRITE_TRUNCATE',
                         create_disposition='CREATE_NEVER'
                     )
                 
