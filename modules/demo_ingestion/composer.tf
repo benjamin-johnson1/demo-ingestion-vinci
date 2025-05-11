@@ -8,7 +8,7 @@ resource "google_composer_environment" "composer_env" {
     }
 
     software_config {
-      image_version = "composer-2.12.1-airflow-2.10.2"
+      image_version = "composer-3-airflow-2.10.5"
       
       airflow_config_overrides = {
         core-dags_are_paused_at_creation = "False"
