@@ -146,3 +146,11 @@ you may experienced issue with the initialization of the database and you may ne
 
 * 7 you can start the dag
 
+## Improvements : 
+
+* 1 addition of assertions to check the quality of the data
+* 2 addition of a deleting bucket if we have ingested wrong data
+* 3 addition of a deduplication layer in airport transformation (following a primary key for exemple) to save cost if the project goes to prod
+* 4 as per the diagram, addition of a pub sub between gloud storage and composer if we want to make the flow event driven. if we want more flexibility we can use a cloud function or a cloud run
+
+Thank you for the review ! i have decided to do this exercice in Composer airflow even if i was more confortable with workflows or dataform to demonstrate my capacity to handle a new solution in less than a day and to match the exiercice . I hope it was intersting to review this code !
