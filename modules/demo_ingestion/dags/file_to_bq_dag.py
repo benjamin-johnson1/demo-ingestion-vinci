@@ -10,6 +10,7 @@ LANDING_BUCKET = os.environ.get('LANDING_BUCKET')
 ERROR_BUCKET = os.environ.get('ERROR_BUCKET')
 ARCHIVE_BUCKET = os.environ.get('ARCHIVE_BUCKET')
 BQ_DATASET = os.environ.get('BQ_DATASET')
+AUDIT_TABLE = 'bj-demo-ingestion-vinci.d_vinci_audit_eu_demo.t_audit_ingestion'
 
 default_args = {
     'owner': 'airflow',
@@ -60,8 +61,6 @@ def file_processing_dag():
                 file_name = os.path.basename(file_path)
                 table_name = f"t_raw_{os.path.splitext(file_name)[0]}"
                 file_extension = file_path.split('.')[-1].lower()
-
-                # Use BigQuery client directly
                 client = bigquery.Client()
 
                 # Configure load job based on file type
@@ -73,13 +72,14 @@ def file_processing_dag():
                         write_disposition='WRITE_APPEND',
                         create_disposition='CREATE_NEVER',
                     )
-                else:  # json
-                    source_format = 'NEWLINE_DELIMITED_JSON'
+                else:  
+                    source_format = 'JSON'
                     job_config = bigquery.LoadJobConfig(
                         source_format=source_format,
                         autodetect=True,
                         write_disposition='WRITE_APPEND',
                         create_disposition='CREATE_NEVER',
+                        json_extension='GEOJSON'
                     )
                 
                 uri = f"gs://{LANDING_BUCKET}/{file_path}"
@@ -91,7 +91,10 @@ def file_processing_dag():
                 )
                 
                 # Wait for the job to complete
-                load_job.result()
+                load_job_result = load_job.result()
+                
+                # Get the number of rows ingested
+                ingested_row_count = load_job_result.output_rows
                 
                 # Update the ingestion_time and ingestion_id for newly added records
                 update_query = f"""
@@ -108,12 +111,28 @@ def file_processing_dag():
                 update_job = client.query(update_query)
                 update_job.result()  # Wait for the update to complete
                 
+                # Log to audit table
+                current_time = datetime.now()
+                audit_row = {
+                    "file_name": file_name,
+                    "status": "SUCCESS",
+                    "error_reason": None,
+                    "ingested_row_count": ingested_row_count,
+                    "ingestion_time": current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    "ingestion_id": dag_run_id
+                }
+                
+                # Insert into audit table
+                audit_rows = [audit_row]
+                audit_errors = client.insert_rows_json(AUDIT_TABLE, audit_rows)
+                if audit_errors:
+                    print(f"Errors inserting into audit table: {audit_errors}")
+                
                 # Generate timestamp for the filename
-                timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                timestamp = current_time.strftime("%Y%m%d%H%M%S")
                 
                 # Split the file path into directory and filename
                 file_dir = os.path.dirname(file_path)
-                file_name = os.path.basename(file_path)
                 file_base, file_ext = os.path.splitext(file_name)
                 
                 # Create the new filename with timestamp
@@ -145,14 +164,34 @@ def file_processing_dag():
                     "file": file_path, 
                     "archived_as": destination_path,
                     "message": f"File {file_path} processed successfully and archived as {destination_path}",
-                    "dag_run_id": dag_run_id
+                    "dag_run_id": dag_run_id,
+                    "ingested_row_count": ingested_row_count
                 })
                 
             except Exception as e:
+                error_message = str(e)
                 # On error, move file to error bucket with timestamp
                 try:
+                    # Log to audit table for error case
+                    client = bigquery.Client()
+                    current_time = datetime.now()
+                    audit_row = {
+                        "file_name": os.path.basename(file_path),
+                        "status": "ERROR",
+                        "error_reason": error_message[:1000],  # Truncate if too long
+                        "ingested_row_count": 0,
+                        "ingestion_time": current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                        "ingestion_id": dag_run_id
+                    }
+                    
+                    # Insert into audit table
+                    audit_rows = [audit_row]
+                    audit_errors = client.insert_rows_json(AUDIT_TABLE, audit_rows)
+                    if audit_errors:
+                        print(f"Errors inserting into audit table: {audit_errors}")
+                    
                     # Generate timestamp for the filename
-                    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                    timestamp = current_time.strftime("%Y%m%d%H%M%S")
                     
                     # Split the file path into directory and filename
                     file_dir = os.path.dirname(file_path)
@@ -186,16 +225,39 @@ def file_processing_dag():
                         "status": "error", 
                         "file": file_path,
                         "error_file": destination_path,
-                        "message": f"Error processing file: {str(e)}. Moved to error bucket as {destination_path}",
-                        "dag_run_id": dag_run_id
+                        "message": f"Error processing file: {error_message}. Moved to error bucket as {destination_path}",
+                        "dag_run_id": dag_run_id,
+                        "ingested_row_count": 0
                     })
                     
                 except Exception as move_error:
+                    # Try to log to audit table even if move failed
+                    try:
+                        client = bigquery.Client()
+                        current_time = datetime.now()
+                        audit_row = {
+                            "file_name": os.path.basename(file_path),
+                            "status": "ERROR",
+                            "error_reason": f"Processing error: {error_message[:500]}... Move error: {str(move_error)[:500]}",
+                            "ingested_row_count": 0,
+                            "ingestion_time": current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                            "ingestion_id": dag_run_id
+                        }
+                        
+                        # Insert into audit table
+                        audit_rows = [audit_row]
+                        audit_errors = client.insert_rows_json(AUDIT_TABLE, audit_rows)
+                        if audit_errors:
+                            print(f"Errors inserting into audit table: {audit_errors}")
+                    except Exception as audit_error:
+                        print(f"Failed to log to audit table: {str(audit_error)}")
+                    
                     results.append({
                         "status": "error", 
                         "file": file_path, 
-                        "message": f"Error processing file and moving to error bucket: {str(e)}, Move error: {str(move_error)}",
-                        "dag_run_id": dag_run_id
+                        "message": f"Error processing file and moving to error bucket: {error_message}, Move error: {str(move_error)}",
+                        "dag_run_id": dag_run_id,
+                        "ingested_row_count": 0
                     })
         
         return results
@@ -205,6 +267,7 @@ def file_processing_dag():
         """Summarize processing results."""
         success_count = sum(1 for r in results if r["status"] == "success")
         error_count = sum(1 for r in results if r["status"] == "error")
+        total_rows_ingested = sum(r.get("ingested_row_count", 0) for r in results)
         
         # Get the DAG run ID from the first result (they all have the same run ID)
         dag_run_id = results[0]["dag_run_id"] if results else "unknown"
@@ -213,6 +276,7 @@ def file_processing_dag():
             "total_files": len(results),
             "success_count": success_count,
             "error_count": error_count,
+            "total_rows_ingested": total_rows_ingested,
             "dag_run_id": dag_run_id
         }
     
