@@ -42,8 +42,6 @@ module "demo_ingestion" {
   project_id  = local.project_id
   usecase = local.usecase
   env = local.env
-  #deploy_sa = module.init.deploy
   location  = local.location
-  #region  = local.region
 }
 
