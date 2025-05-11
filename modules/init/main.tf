@@ -38,7 +38,8 @@ resource "google_project_iam_member" "deploy_bindings" {
     "roles/iam.serviceAccountAdmin",
     "roles/cloudbuild.builds.builder",
     "roles/monitoring.notificationChannelEditor",
-  "roles/monitoring.admin"])
+    "roles/monitoring.admin",
+    "roles/iam.serviceAccountCreator"])
   role   = each.key
   member = "serviceAccount:${google_service_account.deploy.email}"
 }
