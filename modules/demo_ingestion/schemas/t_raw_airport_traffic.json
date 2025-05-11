@@ -1,0 +1,19 @@
+[
+    {
+      "name": "date",
+      "type": "DATE"
+    },
+    {
+      "name": "airport_code",
+      "type": "STRING"
+    },
+    {
+      "name": "flight_type",
+      "type": "STRING"
+    },
+    {
+        "name": "passenger_count",
+        "type": "NUMERIC"
+    }
+    
+  ]
