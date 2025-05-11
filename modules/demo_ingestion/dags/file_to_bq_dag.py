@@ -40,7 +40,9 @@ def file_processing_dag():
         for blob in blobs:
             if blob.name.endswith('.csv') or blob.name.endswith('.json'):
                 files_to_process.append(blob.name)
-        
+
+        # Add this line to log the files found
+        print(f"Files found for processing: {files_to_process}") 
         return files_to_process
     
     @task
@@ -58,6 +60,9 @@ def file_processing_dag():
                 file_name = os.path.basename(file_path)
                 table_name = f"t_raw_{os.path.splitext(file_name)[0]}"
                 file_extension = file_path.split('.')[-1].lower()
+
+                # Use BigQuery client directly
+                client = bigquery.Client()
 
                 # Configure load job based on file type
                 if file_extension == 'csv':
