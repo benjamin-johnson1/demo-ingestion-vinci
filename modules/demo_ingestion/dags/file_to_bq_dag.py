@@ -78,8 +78,7 @@ def file_processing_dag():
                         source_format=source_format,
                         autodetect=True,
                         write_disposition='WRITE_APPEND',
-                        create_disposition='CREATE_NEVER',
-                        json_extension='GEOJSON'
+                        create_disposition='CREATE_NEVER'
                     )
                 
                 uri = f"gs://{LANDING_BUCKET}/{file_path}"
