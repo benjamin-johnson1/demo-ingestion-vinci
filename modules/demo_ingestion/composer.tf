@@ -31,7 +31,7 @@ resource "google_composer_environment" "composer_env" {
   ]
 }
 resource "google_storage_bucket_object" "dag_file" {
-  name   = "dags/file_to_bq_dag.py"
+  name   = "file_to_bq_dag.py"
   bucket = google_composer_environment.composer_env.config[0].dag_gcs_prefix
   source = "${path.module}/dags/file_to_bq_dag.py"
 }
