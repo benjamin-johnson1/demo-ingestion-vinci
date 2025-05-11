@@ -16,6 +16,10 @@
         "type": "STRING"
     },
     {
+        "name": "address",
+        "type": "STRING"
+    },
+    {
         "name": "size",
         "type": "NUMERIC"
     },

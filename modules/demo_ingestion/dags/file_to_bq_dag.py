@@ -67,16 +67,15 @@ def file_processing_dag():
                 # Configure load job based on file type
                 if file_extension == 'csv':
                     job_config = bigquery.LoadJobConfig(
-                        source_format='CSV',
+                        source_format=bigquery.SourceFormat.CSV,
                         skip_leading_rows=1,
                         autodetect=True,
                         write_disposition='WRITE_APPEND',
                         create_disposition='CREATE_NEVER',
                     )
-                else:  
-                    source_format = 'JSON'
+                elif file_extension == 'json':  
                     job_config = bigquery.LoadJobConfig(
-                        source_format=source_format,
+                        source_format= bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
                         autodetect=True,
                         write_disposition='WRITE_TRUNCATE',
                         create_disposition='CREATE_NEVER'
