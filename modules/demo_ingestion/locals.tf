@@ -22,8 +22,9 @@ locals {
     }
 
     common_datasets = {
-        "audit"      = "Contains ${local.usecase} audit tables (public)"
-        "raw"        = "Contains ${local.usecase} raw tables (private)"
+        "audit"      = "Contains ${local.usecase} audit tables "
+        "raw"        = "Contains ${local.usecase} raw tables "
+        "warehouse"  = "Contains ${local.usecase} transformed warehouse tables"
     }
 
     tables = {
@@ -47,6 +48,19 @@ locals {
             }
             clustering = ["airport_code", "flight_type"]
             dataset = "d_vinci_raw_eu_demo"
+        }
+
+        t_warehouse_airport = {
+            id = "t_warehouse_airport"
+            description = "airport trafic data denormalized"
+            schema = file("${path.module}/schemas/t_warehouse_airport.json")
+            time_partitioning = {
+                "type"    = "DAY"
+                "field"   = "date"
+                "require" = false
+            }
+            clustering = ["airport_code", "flight_type"]
+            dataset = "d_vinci_warehouse_eu_demo"
         }
 
         t_audit_ingestion = {
